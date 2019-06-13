@@ -1,12 +1,11 @@
 import gc
 import logging
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from datetime import datetime
 from keras import backend as K
 from Model_Build.lstm import LSTMClassifier, BidirectionalLSTMClassifier, \
-    BidrectionalLSTMGlove
+    BidirectionalLSTMGlove, LSTMAttentionClassifier
 from Model_Build.lightgbm import LightGBMClassifier
 from sklearn.model_selection import StratifiedKFold
 from Model_Build.tokenise import get_weights, spacy_tokenise_and_lemmatize, \
@@ -23,10 +22,9 @@ params = {
     'test_data_path': 'Data/test.csv',
     'results_path': 'Results',
     'use_premade_relational_features': True,
-    'debug_size': None,
+    'debug_size': 1000,
     'max_sequence_length': 100,
-    'models_to_train': [],  # Used to create a stack
-    'pre_trained_models': ['bidi_lstm_glove', 'bidi_lstm'],  # Added to stack
+    'models_to_train': ['bidi_lstm'],  # Used to create a stack
     'tree_model': 'lightgbm',  # Trained on the stack's OOF preds
     'n_cv_folds': 4,
     'random_seed': 0,
@@ -42,8 +40,9 @@ test_df = pd.read_csv(params['test_data_path'], nrows=params['debug_size'])
 model_dict = {
     'lstm': LSTMClassifier,
     'bidi_lstm': BidirectionalLSTMClassifier,
-    'bidi_lstm_glove': BidrectionalLSTMGlove,
-    'lightgbm': LightGBMClassifier
+    'bidi_lstm_glove': BidirectionalLSTMGlove,
+    'lightgbm': LightGBMClassifier,
+    'attention_lstm': LSTMAttentionClassifier
 }
 
 # # --- Pre-processing --- # #
@@ -75,7 +74,7 @@ for model_name in params['models_to_train']:
     cv = StratifiedKFold(params['n_cv_folds'],
                          random_state=params['random_seed'])
     logging.info('Cross validating model %s', model_name)
-    model.cv(X, y, X_test, cv, sample_weight)
+    model.cv(X, y, cv, sample_weight)
     logging.info('Training model %s on full dataset', model_name)
     model.train(X, y, sample_weights=sample_weight)
     model.save(save_dir)

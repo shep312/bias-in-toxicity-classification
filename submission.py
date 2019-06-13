@@ -4,10 +4,8 @@ import string
 import logging
 import pandas as pd
 import numpy as np
-import lightgbm as lgbm
 from glob import glob
 from pathlib import Path
-from sklearn.preprocessing import MinMaxScaler
 from spacy.lang.en.stop_words import STOP_WORDS
 from spacy.lang.en import English
 from keras.preprocessing.text import Tokenizer
@@ -26,46 +24,24 @@ params = {
 
 
 def main(data_path, model_dir, params):
-    # Load and tokenise
+    logging.info('Pre-processing test dataset')
     test = pd.read_csv(data_path)
-    test = spacy_tokenise_and_lemmatize(test)
     test = spacy_tokenise_and_lemmatize(test)
     X_test, _ = sequence_tokens(test, params, train=False)
     del test
 
-    # Load pretrained models
-    logging.info('Loading pretrained models')
+    logging.info('Loading pre-trained models')
     models = [load_model(path) for path in glob(model_dir)]
-    scores = [path[-10:-4] for path in glob(model_dir)]
 
-    # Assign weights to a models prediction based on CV score
+    logging.info('Assigning blend weight according to model CV score')
+    weights = np.array([path[-10:-4] for path in glob(model_dir)])
+    weights /= np.sum(weights)
 
-
-    # Predict on test set
+    logging.info('Predicting from pre-trained models')
     preds = np.concatenate([model.predict(X_test) for model in models])
     y_pred = np.zeros([preds.shape[0], ])
-    for i, score in enumerate(scores):
-        y_pred +=
-
-
-
-    # Load test representations from pretrained models
-    model_preds = [
-        pd.read_csv('../input/common-crawl-lstm-preds/lstm_classifier_test_data_prediction.csv'),
-        pd.read_csv('../input/common-crawl-bidilstm-preds/bidirectional_lstm_classifier_test_data_prediction.csv')
-    ]
-    model_reps = [
-        pd.read_csv('../input/common-crawl-lstm-rep/lstm_classifier_test_data_representation.csv'),
-        pd.read_csv('../input/common-crawl-bidilstm-rep/bidirectional_lstm_classifier_test_data_representation.csv')
-    ]
-    X_test = pd.concat(model_preds + model_reps + [features], axis=1)
-    X_test = X_test.reindex(sorted(X_test.columns), axis=1)
-
-    # Run model
-
-    model = lgbm.Booster(model_file=model_path)
-    logging.info('Predicting')
-    y_pred = model.predict(X_test)
+    for i in range(len(models)):
+        y_pred += preds[:, i] * weights[i]
 
     # Submit
     logging.info('Saving submission')
@@ -138,7 +114,7 @@ def sequence_tokens(df, params, train=True):
         del test
     else:
         logging.info('Loading pretrained tokenizer')
-        with open('../input/tokenisers/keras_tokeniser.pkl', 'rb') as f:
+        with open('Model_Build/Trained_Models/keras_tokeniser.pkl', 'rb') as f:
             try:
                 tokenizer = pickle.load(f)
             except FileNotFoundError as e:
@@ -148,21 +124,8 @@ def sequence_tokens(df, params, train=True):
         word_index = tokenizer.word_index
 
     logging.info('Sequencing and padding tokenised text')
-    if params['embedding'] == 'word2vec':
-        w2v = pickle.load(
-            open('Model_Build/Trained_Models/'
-                 'word2vec_model_custom_stopwords.pkl', 'rb')
-        )
-        sequences = []
-        for row in df['comment_text'].str.split(' ').tolist():
-            sequences.append([w2v.wv.vocab[word].index
-                              if word in w2v.wv.vocab else 0
-                              for word in row])
-        sequences = pad_sequences(sequences, maxlen=100)
-        X = pd.DataFrame(sequences).values
-    else:
-        X = tokenizer.texts_to_sequences(list(df['comment_text']))
-        X = pad_sequences(X, maxlen=params['max_sequence_length'])
+    X = tokenizer.texts_to_sequences(list(df['comment_text']))
+    X = pad_sequences(X, maxlen=params['max_sequence_length'])
 
     del tokenizer, df
     gc.collect()

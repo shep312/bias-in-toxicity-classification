@@ -130,7 +130,7 @@ class BaseKerasClassifier:
             logging.info('Bias metrics computed. Score = {:.4f}'
                          .format(self.comp_metric))
 
-    def cv(self, X, y, X_test, cv=StratifiedKFold(3), sample_weights=None):
+    def cv(self, X, y, cv=StratifiedKFold(3), sample_weights=None):
         """ Apply training function in CV fold """
         oof_reps, val_idxs = [], []
         for fold_no, (train_idx, val_idx) in \
@@ -146,6 +146,10 @@ class BaseKerasClassifier:
             K.clear_session()
             del self.model
             gc.collect()
+
+        # Overfitting control for further train call
+        self.epochs = min([len(res['loss']) for res in self.cv_results])
+        logging.info('Setting max epochs to {}'.format(self.epochs))
 
         self.run_config['cv_comp_metrics'] = self.cv_comp_metrics
         self.run_config['cv_results'] = self.cv_results
@@ -178,6 +182,6 @@ class BaseKerasClassifier:
         with results_out_path.open('w') as f:
              yaml.dump(self.run_config, f)
 
-        model_out_path = out_dir / 'MODEL_{}_score_{:.4f}.h5'\
+        model_out_path = save_dir / 'MODEL_{}_score_{:.4f}.h5'\
             .format(self.__name__, score)
         self.model.save(str(model_out_path))
